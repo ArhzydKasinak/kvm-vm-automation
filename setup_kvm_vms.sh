@@ -51,14 +51,14 @@ cat <<EOL > create_vms.yml
     - name: Определить виртуальную машину из XML
       community.libvirt.virt:
         name: "{{ vm_base_name }}{{ item }}"
-        state: shutdown  # Поменяли на shutdown, если нужно только определить ВМ
+        state: present  # Используем state: present для создания ВМ
         xml: "/tmp/{{ vm_base_name }}{{ item }}.xml"
       loop: "{{ range(1, vm_count | int + 1) | list }}"
 
     - name: Запустить виртуальную машину
       community.libvirt.virt:
         name: "{{ vm_base_name }}{{ item }}"
-        state: running  # Здесь запускаем ВМ
+        state: running  # Запуск ВМ после определения
       loop: "{{ range(1, vm_count | int + 1) | list }}"
 
     - name: Удалить временные XML файлы
