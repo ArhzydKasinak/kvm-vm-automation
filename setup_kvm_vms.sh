@@ -104,9 +104,9 @@ EOL
 # Задача для создания одной ВМ
 echo "Создаём задачу для создания одной ВМ..."
 cat <<EOL > roles/create_vm/tasks/create_one_vm.yml
-- name: Define and start VM {{ vm_name }}
+- name: Define and start VM {{ vm_base_name }}{{ item }}
   virt:
-    name: "{{ vm_name }}"
+    name: "{{ vm_base_name }}{{ item }}"
     state: defined
     vcpu: 2
     memory_mb: 2048
