@@ -42,24 +42,23 @@ cat <<EOL > create_vms.yml
       private: no
 
   tasks:
-    - name: Create virtual machine from QCOW2 template
+    - name: Создать XML-конфигурацию для ВМ
+      template:
+        src: roles/create_vm/templates/vm.xml.j2
+        dest: "/tmp/{{ vm_base_name }}{{ item }}.xml"
+      loop: "{{ range(1, vm_count | int + 1) | list }}"
+
+    - name: Определить и запустить виртуальную машину из XML
       community.libvirt.virt:
         name: "{{ vm_base_name }}{{ item }}"
         state: running
-        vcpu: 2
-        memory_mb: 2048
-        disk:
-          size: 20
-          image: "{{ qcow2_image }}"
-        network:
-          - bridge: br0
-        graphics: vnc
+        xml: "/tmp/{{ vm_base_name }}{{ item }}.xml"
       loop: "{{ range(1, vm_count | int + 1) | list }}"
 
-    - name: Start virtual machines
-      virt:
-        name: "{{ vm_base_name }}{{ item }}"
-        state: running
+    - name: Удалить временные XML файлы
+      file:
+        path: "/tmp/{{ vm_base_name }}{{ item }}.xml"
+        state: absent
       loop: "{{ range(1, vm_count | int + 1) | list }}"
 EOL
 
@@ -73,19 +72,25 @@ mkdir -p roles/create_vm/vars
 echo "Создаём шаблон для конфигурации ВМ (vm.xml.j2)..."
 cat <<EOL > roles/create_vm/templates/vm.xml.j2
 <domain type='kvm'>
-  <name>{{ vm_name }}</name>
-  <memory unit='KiB'>{{ vm_memory }}</memory>
-  <vcpu placement='static'>{{ vm_vcpu }}</vcpu>
-  <disk type='file' device='disk'>
-    <driver name='qemu' type='qcow2'/>
-    <source file='/var/lib/libvirt/images/{{ vm_name }}.qcow2'/>
-    <target dev='vda' bus='virtio'/>
-  </disk>
-  <interface type='bridge'>
-    <mac address='52:54:00:00:00:00'/>
-    <source bridge='{{ vm_bridge }}'/>
-    <model type='virtio'/>
-  </interface>
+  <name>{{ vm_base_name }}{{ item }}</name>
+  <memory unit='MiB'>2048</memory>
+  <vcpu placement='static'>2</vcpu>
+  <os>
+    <type arch='x86_64' machine='pc-i440fx-2.9'>hvm</type>
+  </os>
+  <devices>
+    <disk type='file' device='disk'>
+      <driver name='qemu' type='qcow2'/>
+      <source file='{{ qcow2_image }}'/>
+      <target dev='vda' bus='virtio'/>
+    </disk>
+    <interface type='bridge'>
+      <mac address='52:54:00:00:{{ '%02x' % (item % 255) }}'/>
+      <source bridge='br0'/>
+      <model type='virtio'/>
+    </interface>
+    <graphics type='vnc' port='-1' listen='0.0.0.0'/>
+  </devices>
 </domain>
 EOL
 
