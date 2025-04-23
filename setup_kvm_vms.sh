@@ -45,7 +45,7 @@ cat <<EOL > create_vms.yml
     - name: Create virtual machine from QCOW2 template
       virt:
         name: "{{ vm_base_name }}{{ item }}"
-        state: defined
+        state: running
         vcpu: 2
         memory_mb: 2048
         disk:
