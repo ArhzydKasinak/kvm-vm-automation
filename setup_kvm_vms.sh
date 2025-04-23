@@ -48,11 +48,17 @@ cat <<EOL > create_vms.yml
         dest: "/tmp/{{ vm_base_name }}{{ item }}.xml"
       loop: "{{ range(1, vm_count | int + 1) | list }}"
 
-    - name: Определить и запустить виртуальную машину из XML
+    - name: Определить виртуальную машину из XML
+      community.libvirt.virt:
+        name: "{{ vm_base_name }}{{ item }}"
+        state: defined
+        xml: "/tmp/{{ vm_base_name }}{{ item }}.xml"
+      loop: "{{ range(1, vm_count | int + 1) | list }}"
+
+    - name: Запустить виртуальную машину
       community.libvirt.virt:
         name: "{{ vm_base_name }}{{ item }}"
         state: running
-        xml: "/tmp/{{ vm_base_name }}{{ item }}.xml"
       loop: "{{ range(1, vm_count | int + 1) | list }}"
 
     - name: Удалить временные XML файлы
