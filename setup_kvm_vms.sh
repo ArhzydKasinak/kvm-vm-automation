@@ -43,7 +43,7 @@ cat <<EOL > create_vms.yml
 
   tasks:
     - name: Create virtual machine from QCOW2 template
-      virt:
+      community.libvirt.virt:
         name: "{{ vm_base_name }}{{ item }}"
         state: running
         vcpu: 2
