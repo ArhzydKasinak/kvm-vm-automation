@@ -1,43 +1,65 @@
 #!/bin/bash
 
-# Этот скрипт автоматически выполнит все нужные установки и настройки для автоматизации создания ВМ с помощью KVM и Ansible.
+set -e
 
-# Установка необходимых пакетов
-echo "Устанавливаем необходимые пакеты..."
+echo "🔧 Устанавливаем необходимые пакеты..."
 sudo apt update
-sudo apt install -y qemu-kvm libvirt-daemon-system libvirt-clients virtinst virt-manager ansible
+sudo apt install -y qemu-kvm libvirt-daemon-system libvirt-clients virtinst virt-manager ansible python3-libvirt
 
-# Добавление пользователя в группу libvirt
-echo "Добавляем пользователя в группу libvirt..."
-sudo usermod -aG libvirt $USER
-newgrp libvirt
+echo "👤 Добавляем пользователя в группу libvirt..."
+sudo usermod -aG libvirt "$USER"
 
-# Подготовка рабочей директории
-echo "Создаём директорию для проекта..."
-mkdir -p ~/kvm_vm_automation
+echo "🌐 Проверяем наличие моста br0..."
+if ! ip link show br0 > /dev/null 2>&1; then
+  echo "🔧 Мост br0 не найден, создаём..."
+
+  # Уточни, какой интерфейс будет в качестве физического (например, eth0 или enp1s0)
+  # Здесь просто пример с интерфейсом eth0
+  read -p "Введите имя физического интерфейса для моста (например, eth0): " phys_iface
+
+  # Создание Netplan-конфигурации (для Ubuntu 18.04+)
+  sudo bash -c "cat > /etc/netplan/01-br0.yaml" <<EOF
+network:
+  version: 2
+  renderer: networkd
+  ethernets:
+    ${phys_iface}:
+      dhcp4: no
+  bridges:
+    br0:
+      interfaces: [${phys_iface}]
+      dhcp4: yes
+EOF
+
+  echo "💾 Применяем настройки сети..."
+  sudo netplan apply
+else
+  echo "✅ Мост br0 уже существует."
+fi
+
+echo "📁 Создаём структуру проекта..."
+mkdir -p ~/kvm_vm_automation/{roles/create_vm/{tasks,templates},}
 cd ~/kvm_vm_automation
 
-# Создание инвентарного файла для Ansible
-echo "Создаём инвентарный файл для Ansible..."
-cat <<EOL > inventory
+echo "🗂️ Создаём инвентарный файл..."
+cat <<EOF > inventory
 localhost ansible_connection=local
-EOL
+EOF
 
-# Создание файла main.yml для Ansible
-echo "Создаём основной Playbook для Ansible..."
-cat <<EOL > create_vms.yml
+echo "📜 Создаём Ansible playbook..."
+cat <<EOF > create_vms.yml
 - name: Create VMs from QCOW2 template
   hosts: localhost
   gather_facts: no
 
   vars_prompt:
-    - name: "vm_base_name"
+    - name: vm_base_name
       prompt: "Введите базовое имя ВМ (например, vm)"
       private: no
-    - name: "vm_count"
+    - name: vm_count
       prompt: "Сколько ВМ создать?"
       private: no
-    - name: "qcow2_image"
+    - name: qcow2_image
       prompt: "Путь к образу QCOW2?"
       private: no
 
@@ -48,17 +70,16 @@ cat <<EOL > create_vms.yml
         dest: "/tmp/{{ vm_base_name }}{{ item }}.xml"
       loop: "{{ range(1, vm_count | int + 1) | list }}"
 
-    - name: Определить виртуальную машину из XML
+    - name: Определить и запустить виртуальную машину
       community.libvirt.virt:
-        name: "{{ vm_base_name }}{{ item }}"
-        state: present  # Используем state: present для создания ВМ
+        command: define
         xml: "/tmp/{{ vm_base_name }}{{ item }}.xml"
       loop: "{{ range(1, vm_count | int + 1) | list }}"
 
-    - name: Запустить виртуальную машину
+    - name: Запустить ВМ
       community.libvirt.virt:
         name: "{{ vm_base_name }}{{ item }}"
-        state: running  # Запуск ВМ после определения
+        state: running
       loop: "{{ range(1, vm_count | int + 1) | list }}"
 
     - name: Удалить временные XML файлы
@@ -66,23 +87,17 @@ cat <<EOL > create_vms.yml
         path: "/tmp/{{ vm_base_name }}{{ item }}.xml"
         state: absent
       loop: "{{ range(1, vm_count | int + 1) | list }}"
-EOL
+EOF
 
-# Создание роли Ansible для виртуальных машин
-echo "Создаём структуру для роли Ansible..."
-mkdir -p roles/create_vm/tasks
-mkdir -p roles/create_vm/templates
-mkdir -p roles/create_vm/vars
-
-# Шаблон XML для виртуальных машин
-echo "Создаём шаблон для конфигурации ВМ (vm.xml.j2)..."
-cat <<EOL > roles/create_vm/templates/vm.xml.j2
+echo "📄 Создаём шаблон конфигурации ВМ..."
+cat <<EOF > roles/create_vm/templates/vm.xml.j2
 <domain type='kvm'>
   <name>{{ vm_base_name }}{{ item }}</name>
   <memory unit='MiB'>2048</memory>
   <vcpu placement='static'>2</vcpu>
   <os>
-    <type arch='x86_64' machine='pc-i440fx-2.9'>hvm</type>
+    <type arch='x86_64' machine='pc'>hvm</type>
+    <boot dev='hd'/>
   </os>
   <devices>
     <disk type='file' device='disk'>
@@ -91,48 +106,16 @@ cat <<EOL > roles/create_vm/templates/vm.xml.j2
       <target dev='vda' bus='virtio'/>
     </disk>
     <interface type='bridge'>
-      <mac address='52:54:00:00:{{ '%02x' % (item % 255) }}'/>
       <source bridge='br0'/>
       <model type='virtio'/>
     </interface>
     <graphics type='vnc' port='-1' listen='0.0.0.0'/>
   </devices>
 </domain>
-EOL
+EOF
 
-# Основная задача для роли create_vm
-echo "Создаём основную задачу для роли..."
-cat <<EOL > roles/create_vm/tasks/main.yml
-- name: Create VMs from QCOW2 image
-  include_tasks: create_one_vm.yml
-EOL
+echo "✅ Готово! Чтобы запустить создание ВМ, выполните:"
+echo "  cd ~/kvm_vm_automation"
+echo "  ansible-playbook -i inventory create_vms.yml"
 
-# Задача для создания одной ВМ
-echo "Создаём задачу для создания одной ВМ..."
-cat <<EOL > roles/create_vm/tasks/create_one_vm.yml
-- name: Define and start VM {{ vm_base_name }}{{ item }}
-  virt:
-    name: "{{ vm_base_name }}{{ item }}"
-    state: defined
-    vcpu: 2
-    memory_mb: 2048
-    disk:
-      size: 20
-      image: "{{ qcow2_image }}"
-    network:
-      - bridge: br0
-    graphics: vnc
-EOL
-
-# Уведомление об окончании установки
-echo "Все необходимые файлы созданы."
-
-# Инструкции для пользователя
-echo "Инструкция:"
-echo "1. Подготовьте образ QCOW2 (например, Debian или Ubuntu) и разместите его на сервере."
-echo "2. Запустите Ansible Playbook:"
-echo "   ansible-playbook -i inventory create_vms.yml"
-echo "3. Введите параметры: имя ВМ, количество ВМ и путь к образу QCOW2."
-
-# Завершение работы
-echo "Готово! Вы можете использовать Ansible для создания виртуальных машин."
+echo "💡 Примечание: после установки добавьте bridge 'br0', если он ещё не создан."
