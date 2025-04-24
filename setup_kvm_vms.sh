@@ -23,11 +23,11 @@ network:
   version: 2
   renderer: networkd
   ethernets:
-    ens3:
+    eth0:
       dhcp4: no
   bridges:
     br0:
-      interfaces: [ens3]
+      interfaces: [eth0]
       addresses: [192.168.122.100/24]
       gateway4: 192.168.122.1
       nameservers:
