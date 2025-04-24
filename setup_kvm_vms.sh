@@ -18,17 +18,20 @@ if ! ip link show br0 > /dev/null 2>&1; then
   read -p "Введите имя физического интерфейса для моста (например, eth0): " phys_iface
 
   # Создание Netplan-конфигурации (для Ubuntu 18.04+)
-  sudo bash -c "cat > /etc/netplan/01-br0.yaml" <<EOF
+  sudo tee /etc/netplan/01-br0.yaml > /dev/null <<EOF
 network:
   version: 2
   renderer: networkd
   ethernets:
-    ${phys_iface}:
+    ens3:
       dhcp4: no
   bridges:
     br0:
-      interfaces: [${phys_iface}]
-      dhcp4: yes
+      interfaces: [ens3]
+      addresses: [192.168.122.100/24]
+      gateway4: 192.168.122.1
+      nameservers:
+        addresses: [8.8.8.8, 8.8.4.4]
 EOF
 
   echo "💾 Применяем настройки сети..."
